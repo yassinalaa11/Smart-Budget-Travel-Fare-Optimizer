@@ -1,0 +1,16 @@
+route_id,origin_iata,destination_iata,origin_city,destination_city,distance_km,is_international,typical_flight_duration_min
+CAI-LHR,CAI,LHR,Cairo,London,,true,
+CAI-CDG,CAI,CDG,Cairo,Paris,,true,
+CAI-FRA,CAI,FRA,Cairo,Frankfurt,,true,
+CAI-FCO,CAI,FCO,Cairo,Rome,,true,
+CAI-IST,CAI,IST,Cairo,Istanbul,,true,
+CAI-ATH,CAI,ATH,Cairo,Athens,,true,
+CAI-DXB,CAI,DXB,Cairo,Dubai,,true,
+CAI-DOH,CAI,DOH,Cairo,Doha,,true,
+CAI-AUH,CAI,AUH,Cairo,Abu Dhabi,,true,
+CAI-JED,CAI,JED,Cairo,Jeddah,,true,
+CAI-RUH,CAI,RUH,Cairo,Riyadh,,true,
+CAI-AMM,CAI,AMM,Cairo,Amman,,true,
+CAI-JFK,CAI,JFK,Cairo,New York,,true,
+CAI-YYZ,CAI,YYZ,Cairo,Toronto,,true,
+CAI-BOM,CAI,BOM,Cairo,Mumbai,,true

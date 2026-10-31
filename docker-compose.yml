@@ -1,0 +1,104 @@
+name: smartfare
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smartfare}
+      POSTGRES_USER: ${POSTGRES_USER:-smartfare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  prefect:
+    image: prefecthq/prefect:2-python3.12
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "${PREFECT_PORT:-4200}:4200"
+    environment:
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_UI_API_URL: http://localhost:${PREFECT_PORT:-4200}/api
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+    volumes:
+      - ./api:/app/api
+      - ./transform:/app/transform
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-smartfare}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smartfare}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-smartfare}
+      POSTGRES_USER: ${POSTGRES_USER:-smartfare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AMADEUS_CLIENT_ID: ${AMADEUS_CLIENT_ID:-}
+      AMADEUS_CLIENT_SECRET: ${AMADEUS_CLIENT_SECRET:-}
+      AMADEUS_BASE_URL: ${AMADEUS_BASE_URL:-https://test.api.amadeus.com}
+      TRAVELPAYOUTS_TOKEN: ${TRAVELPAYOUTS_TOKEN:-}
+      SMARTFARE_PROVIDER: ${SMARTFARE_PROVIDER:-mock}
+      SMARTFARE_MAX_REQUESTS_PER_RUN: ${SMARTFARE_MAX_REQUESTS_PER_RUN:-25}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ingestion-runner:
+    build:
+      context: .
+    volumes:
+      - ./data:/app/data:ro
+    command: python -m ingestion.flows.daily_ingest
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-smartfare}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smartfare}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-smartfare}
+      POSTGRES_USER: ${POSTGRES_USER:-smartfare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PREFECT_API_URL: http://prefect:4200/api
+      AMADEUS_CLIENT_ID: ${AMADEUS_CLIENT_ID:-}
+      AMADEUS_CLIENT_SECRET: ${AMADEUS_CLIENT_SECRET:-}
+      AMADEUS_BASE_URL: ${AMADEUS_BASE_URL:-https://test.api.amadeus.com}
+      TRAVELPAYOUTS_TOKEN: ${TRAVELPAYOUTS_TOKEN:-}
+      SMARTFARE_PROVIDER: ${SMARTFARE_PROVIDER:-mock}
+      SMARTFARE_MAX_REQUESTS_PER_RUN: ${SMARTFARE_MAX_REQUESTS_PER_RUN:-25}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect:
+        condition: service_healthy
+    restart: unless-stopped
+
+  streamlit:
+    build:
+      context: .
+    volumes:
+      - ./dashboard:/app/dashboard
+    command: streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
+    environment:
+      SMARTFARE_API_URL: http://api:8000
+      SMARTFARE_PROVIDER: ${SMARTFARE_PROVIDER:-mock}
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

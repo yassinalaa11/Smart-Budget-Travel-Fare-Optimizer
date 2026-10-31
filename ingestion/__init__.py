@@ -1,0 +1,1 @@
+"""SmartFare data ingestion package."""

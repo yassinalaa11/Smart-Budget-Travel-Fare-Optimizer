@@ -1,0 +1,1 @@
+"""SmartFare Streamlit dashboard."""

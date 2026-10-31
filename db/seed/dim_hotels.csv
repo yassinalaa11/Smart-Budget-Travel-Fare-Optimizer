@@ -1,0 +1,46 @@
+hotel_market_id,destination_iata,city_name,star_tier,market_category,is_active
+LHR-3,LHR,London,3,standard,true
+LHR-4,LHR,London,4,standard,true
+LHR-5,LHR,London,5,standard,true
+CDG-3,CDG,Paris,3,standard,true
+CDG-4,CDG,Paris,4,standard,true
+CDG-5,CDG,Paris,5,standard,true
+FRA-3,FRA,Frankfurt,3,standard,true
+FRA-4,FRA,Frankfurt,4,standard,true
+FRA-5,FRA,Frankfurt,5,standard,true
+FCO-3,FCO,Rome,3,standard,true
+FCO-4,FCO,Rome,4,standard,true
+FCO-5,FCO,Rome,5,standard,true
+IST-3,IST,Istanbul,3,standard,true
+IST-4,IST,Istanbul,4,standard,true
+IST-5,IST,Istanbul,5,standard,true
+ATH-3,ATH,Athens,3,standard,true
+ATH-4,ATH,Athens,4,standard,true
+ATH-5,ATH,Athens,5,standard,true
+DXB-3,DXB,Dubai,3,standard,true
+DXB-4,DXB,Dubai,4,standard,true
+DXB-5,DXB,Dubai,5,standard,true
+DOH-3,DOH,Doha,3,standard,true
+DOH-4,DOH,Doha,4,standard,true
+DOH-5,DOH,Doha,5,standard,true
+AUH-3,AUH,Abu Dhabi,3,standard,true
+AUH-4,AUH,Abu Dhabi,4,standard,true
+AUH-5,AUH,Abu Dhabi,5,standard,true
+JED-3,JED,Jeddah,3,standard,true
+JED-4,JED,Jeddah,4,standard,true
+JED-5,JED,Jeddah,5,standard,true
+RUH-3,RUH,Riyadh,3,standard,true
+RUH-4,RUH,Riyadh,4,standard,true
+RUH-5,RUH,Riyadh,5,standard,true
+AMM-3,AMM,Amman,3,standard,true
+AMM-4,AMM,Amman,4,standard,true
+AMM-5,AMM,Amman,5,standard,true
+JFK-3,JFK,New York,3,standard,true
+JFK-4,JFK,New York,4,standard,true
+JFK-5,JFK,New York,5,standard,true
+YYZ-3,YYZ,Toronto,3,standard,true
+YYZ-4,YYZ,Toronto,4,standard,true
+YYZ-5,YYZ,Toronto,5,standard,true
+BOM-3,BOM,Mumbai,3,standard,true
+BOM-4,BOM,Mumbai,4,standard,true
+BOM-5,BOM,Mumbai,5,standard,true
