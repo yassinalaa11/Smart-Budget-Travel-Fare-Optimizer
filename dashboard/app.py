@@ -43,8 +43,8 @@ def hotel_assets():
     return frame, hotels, model, metrics
 
 
-observed_tab, serpapi_tab, prediction_tab = st.tabs(
-    ["Observed flight prices", "SerpApi snapshot", "Prediction demo"]
+observed_tab, serpapi_tab, hotel_tab, prediction_tab = st.tabs(
+    ["Observed flight prices", "SerpApi flights", "SerpApi hotels", "Prediction demo"]
 )
 
 
@@ -57,6 +57,18 @@ def load_serpapi_snapshot() -> pd.DataFrame:
     frame["price_egp"] = pd.to_numeric(frame["price_egp"], errors="coerce")
     frame["duration_min"] = pd.to_numeric(frame["duration_min"], errors="coerce")
     frame["stops"] = pd.to_numeric(frame["stops"], errors="coerce")
+    return frame
+
+
+@st.cache_data
+def load_serpapi_hotels() -> pd.DataFrame:
+    path = Path("/app/data/destination_hotels.csv")
+    frame = pd.read_csv(path)
+    frame["collected_at"] = pd.to_datetime(frame["collected_at"], errors="coerce")
+    frame["check_in"] = pd.to_datetime(frame["check_in"], errors="coerce")
+    frame["check_out"] = pd.to_datetime(frame["check_out"], errors="coerce")
+    for column in ["price_per_night_egp", "total_price_egp", "rating", "reviews", "hotel_class"]:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
     return frame
 
 with observed_tab:
@@ -143,6 +155,40 @@ with serpapi_tab:
             st.caption("The CSV has one collection timestamp. The chart compares offer prices across travel dates; it does not show how a fare changed over time.")
     except (FileNotFoundError, KeyError, ValueError) as exc:
         st.error(f"Could not load the SerpApi CSV: {exc}")
+
+with hotel_tab:
+    st.subheader("Hotel offers collected through SerpApi")
+    st.caption("A single API snapshot for a fixed three-night stay. These are current offers, not historical nightly prices.")
+    st.markdown("Source: [SerpApi Google Hotels API](https://serpapi.com/google-hotels-api)")
+    try:
+        hotels = load_serpapi_hotels()
+        if hotels.empty:
+            st.info("The SerpApi hotel CSV has no rows.")
+        else:
+            collected = hotels["collected_at"].dropna()
+            if not collected.empty:
+                st.info(f"Snapshot collected: {collected.min().strftime('%Y-%m-%d %H:%M:%S')}")
+            destinations = sorted(hotels["destination"].dropna().unique())
+            destination = st.selectbox("Destination", destinations, key="serpapi_hotel_destination")
+            selection = hotels[hotels["destination"] == destination].copy()
+            priced = selection.dropna(subset=["price_per_night_egp"])
+            a, b, c = st.columns(3)
+            a.metric("Hotel offers", len(selection))
+            if not priced.empty:
+                b.metric("Lowest nightly price", f"EGP {priced.price_per_night_egp.min():,.0f}")
+                c.metric("Median nightly price", f"EGP {priced.price_per_night_egp.median():,.0f}")
+            if not priced.empty:
+                chart = priced.nsmallest(15, "price_per_night_egp").set_index("name")[["price_per_night_egp"]]
+                st.bar_chart(chart)
+            columns = ["name", "type", "hotel_class", "rating", "reviews", "check_in", "check_out",
+                       "price_per_night_egp", "total_price_egp", "free_cancellation", "amenities"]
+            st.dataframe(
+                selection[columns].sort_values("price_per_night_egp", na_position="last"),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption("The file contains one collection timestamp and one check-in/check-out window across destinations. It cannot show price changes over time.")
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        st.error(f"Could not load the SerpApi hotel CSV: {exc}")
 
 with prediction_tab:
     st.subheader("When might prices be lower?")
