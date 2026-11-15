@@ -1,0 +1,21 @@
+hotel_id,external_id,name,city,country_code,stars,review_score,review_count,latitude,longitude,is_tracked
+1,SYN-0001,Alexandria Seaview Hotel,Alexandria,EG,3.0,6.0,2739,31.1934,29.92196,True
+2,SYN-0002,Alexandria Central Hotel,Alexandria,EG,3.0,6.6,3659,31.20948,29.91641,True
+3,SYN-0003,Alexandria Palm Hotel,Alexandria,EG,4.0,7.2,704,31.20587,29.92843,True
+4,SYN-0004,Alexandria Grand Hotel,Alexandria,EG,4.0,7.1,583,31.19973,29.93032,True
+5,SYN-0005,Alexandria Royal Hotel,Alexandria,EG,5.0,7.7,1038,31.18289,29.94762,True
+6,SYN-0006,Cairo Seaview Hotel,Cairo,EG,3.0,7.0,765,30.04455,31.24689,True
+7,SYN-0007,Cairo Central Hotel,Cairo,EG,3.0,6.5,1194,30.07149,31.20293,True
+8,SYN-0008,Cairo Palm Hotel,Cairo,EG,4.0,6.1,2927,30.04463,31.22695,True
+9,SYN-0009,Cairo Grand Hotel,Cairo,EG,4.0,6.9,2560,30.05833,31.2551,True
+10,SYN-0010,Cairo Royal Hotel,Cairo,EG,5.0,6.5,2523,30.04668,31.23261,True
+11,SYN-0011,Sharm El Sheikh Seaview Hotel,Sharm El Sheikh,EG,3.0,7.1,3269,27.9213,34.33151,True
+12,SYN-0012,Sharm El Sheikh Central Hotel,Sharm El Sheikh,EG,3.0,6.0,2788,27.93857,34.35996,True
+13,SYN-0013,Sharm El Sheikh Palm Hotel,Sharm El Sheikh,EG,4.0,7.0,3495,27.90072,34.34827,True
+14,SYN-0014,Sharm El Sheikh Grand Hotel,Sharm El Sheikh,EG,4.0,6.6,1394,27.92513,34.33431,True
+15,SYN-0015,Sharm El Sheikh Royal Hotel,Sharm El Sheikh,EG,5.0,8.2,2072,27.93149,34.35422,True
+16,SYN-0016,Dubai Seaview Hotel,Dubai,AE,3.0,6.6,3071,25.25473,55.29171,True
+17,SYN-0017,Dubai Central Hotel,Dubai,AE,3.0,6.7,3504,25.19866,55.28427,True
+18,SYN-0018,Dubai Palm Hotel,Dubai,AE,4.0,7.2,1161,25.1873,55.28408,True
+19,SYN-0019,Dubai Grand Hotel,Dubai,AE,4.0,7.2,840,25.21297,55.24495,True
+20,SYN-0020,Dubai Royal Hotel,Dubai,AE,5.0,7.4,2541,25.23151,55.23157,True

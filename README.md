@@ -10,6 +10,20 @@ SmartFare is a Docker-based prototype for collecting and exploring flight prices
 - FastAPI and Streamlit provide access to the current flight-price results.
 - Hotel import and transformation code is present, but requires a real, permitted hotel-price CSV source.
 
+## Instructor demo: synthetic prediction prototype
+
+The Streamlit dashboard has two sections. **Observed flight prices** displays the small provider sample stored by the ingestion pipeline. **Prediction demo** trains a Random Forest model on the supplied synthetic flight and hotel CSVs and compares its mean absolute error (MAE) with a simple median-price baseline using a chronological holdout.
+
+The flight demo uses `data/synthetic_flights_calibrated.csv`. Its synthetic values were rescaled to match the min/median/max of a small Travelpayouts sample for CAI-DXB and CAI-IST. It is still synthetic, and the calibration sample is too small to validate a useful travel forecast. The hotel demo uses the supplied synthetic hotel files and has no real-price calibration. Present the output as a functioning ML prototype, not as booking advice or proven accuracy. See `data/synthetic_flights_calibration_notes.md` for provenance.
+
+To rebuild after pulling the project or adding these files:
+
+```powershell
+docker compose up --build -d
+```
+
+Then open <http://localhost:8501> and choose **Prediction demo**. The dashboard container mounts `data/` read-only so the example datasets remain unchanged.
+
 Mock and synthetic data are for development only. They must not be presented as real prices or used to claim forecast accuracy. Real provider coverage is currently limited, and this project does not yet have two years of real historical observations. Check each data provider's terms before collecting or storing data.
 
 ## Run with Docker Compose

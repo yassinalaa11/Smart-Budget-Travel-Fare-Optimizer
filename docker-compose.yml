@@ -90,6 +90,7 @@ services:
       context: .
     volumes:
       - ./dashboard:/app/dashboard
+      - ./data:/app/data:ro
     command: streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
     environment:
       SMARTFARE_API_URL: http://api:8000
