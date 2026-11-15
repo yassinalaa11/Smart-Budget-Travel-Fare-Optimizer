@@ -1,5 +1,6 @@
 import os
 from datetime import date
+from pathlib import Path
 
 import httpx
 import pandas as pd
@@ -42,7 +43,21 @@ def hotel_assets():
     return frame, hotels, model, metrics
 
 
-observed_tab, prediction_tab = st.tabs(["Observed flight prices", "Prediction demo"])
+observed_tab, serpapi_tab, prediction_tab = st.tabs(
+    ["Observed flight prices", "SerpApi snapshot", "Prediction demo"]
+)
+
+
+@st.cache_data
+def load_serpapi_snapshot() -> pd.DataFrame:
+    path = Path("/app/data/cai_international_flights.csv")
+    frame = pd.read_csv(path)
+    frame["collected_at"] = pd.to_datetime(frame["collected_at"], errors="coerce")
+    frame["flight_date"] = pd.to_datetime(frame["flight_date"], errors="coerce")
+    frame["price_egp"] = pd.to_numeric(frame["price_egp"], errors="coerce")
+    frame["duration_min"] = pd.to_numeric(frame["duration_min"], errors="coerce")
+    frame["stops"] = pd.to_numeric(frame["stops"], errors="coerce")
+    return frame
 
 with observed_tab:
     st.subheader("Collected flight-price history")
@@ -88,6 +103,46 @@ with observed_tab:
                     st.dataframe(pd.DataFrame(points), use_container_width=True, hide_index=True)
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         st.error(f"Could not load the observed sample from the API: {exc}")
+
+with serpapi_tab:
+    st.subheader("Flight offers collected through SerpApi")
+    st.caption("A single API snapshot. These are offers available at collection time, not historical price observations.")
+    st.markdown("Source: [SerpApi Google Flights API](https://serpapi.com/google-flights-api)")
+    try:
+        offers = load_serpapi_snapshot()
+        if offers.empty:
+            st.info("The SerpApi CSV has no flight rows.")
+        else:
+            collected = offers["collected_at"].dropna()
+            if not collected.empty:
+                st.info(f"Snapshot collected: {collected.min().strftime('%Y-%m-%d %H:%M:%S')}")
+            routes = sorted((offers.origin.astype(str) + "-" + offers.destination.astype(str)).unique())
+            route = st.selectbox("Route", routes, key="serpapi_route")
+            route_offers = offers[
+                (offers.origin.astype(str) + "-" + offers.destination.astype(str)) == route
+            ].copy()
+            priced = route_offers.dropna(subset=["price_egp"])
+            a, b, c = st.columns(3)
+            a.metric("Offers", len(route_offers))
+            if not priced.empty:
+                b.metric("Lowest listed price", f"EGP {priced.price_egp.min():,.0f}")
+                c.metric("Median listed price", f"EGP {priced.price_egp.median():,.0f}")
+            if route_offers.price_egp.isna().any():
+                st.warning(f"{int(route_offers.price_egp.isna().sum())} offer(s) have no price and are excluded from price summaries.")
+            if not priced.empty:
+                daily = priced.groupby("flight_date", as_index=True).price_egp.min().rename("minimum_listed_price_egp")
+                st.line_chart(daily)
+            display_columns = [
+                "flight_date", "airline", "flight_number", "departure_time", "arrival_time",
+                "duration_min", "stops", "price_egp", "price_level", "airplane", "co2_g",
+            ]
+            st.dataframe(
+                route_offers[display_columns].sort_values(["flight_date", "price_egp"], na_position="last"),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption("The CSV has one collection timestamp. The chart compares offer prices across travel dates; it does not show how a fare changed over time.")
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        st.error(f"Could not load the SerpApi CSV: {exc}")
 
 with prediction_tab:
     st.subheader("When might prices be lower?")

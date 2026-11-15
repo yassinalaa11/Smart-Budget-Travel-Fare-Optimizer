@@ -12,7 +12,9 @@ SmartFare is a Docker-based prototype for collecting and exploring flight prices
 
 ## Instructor demo: synthetic prediction prototype
 
-The Streamlit dashboard has two sections. **Observed flight prices** displays the small provider sample stored by the ingestion pipeline. **Prediction demo** trains a Random Forest model on the supplied synthetic flight and hotel CSVs and compares its mean absolute error (MAE) with a simple median-price baseline using a chronological holdout.
+The Streamlit dashboard has three sections. **Observed flight prices** displays the small provider sample stored by the ingestion pipeline. **SerpApi snapshot** displays `data/cai_international_flights.csv` as a separate one-time offer snapshot. **Prediction demo** trains a Random Forest model on the supplied synthetic flight and hotel CSVs and compares its mean absolute error (MAE) with a simple median-price baseline using a chronological holdout.
+
+The SerpApi CSV was collected at one timestamp and contains current flight offers for future travel dates. It is not historical price tracking and is not used to train the synthetic prediction models. Keep the API key out of the CSV and repository. Source: [SerpApi Google Flights API](https://serpapi.com/google-flights-api).
 
 The flight demo uses `data/synthetic_flights_calibrated.csv`. Its synthetic values were rescaled to match the min/median/max of a small Travelpayouts sample for CAI-DXB and CAI-IST. It is still synthetic, and the calibration sample is too small to validate a useful travel forecast. The hotel demo uses the supplied synthetic hotel files and has no real-price calibration. Present the output as a functioning ML prototype, not as booking advice or proven accuracy. See `data/synthetic_flights_calibration_notes.md` for provenance.
 
