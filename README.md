@@ -46,6 +46,14 @@ Mock and synthetic data are for development only. They must not be presented as 
 
 The default provider is `mock`, so the app can start without provider credentials. Real API ingestion requires valid credentials and is subject to provider availability and usage terms.
 
+The scheduled Prefect flow collects the configured flight provider and then runs dbt to refresh Silver and Gold. It runs daily at 02:00 UTC. Trigger it from the Prefect UI or from PowerShell:
+
+```powershell
+docker compose exec ingestion-runner prefect deployment run 'smartfare-daily-ingest/smartfare-daily-ingest'
+```
+
+The committed SerpApi CSV snapshots are a separate, one-time import. Import those explicitly using the command in the ETL section below; the daily flow does not re-import static snapshots.
+
 ## ETL and data warehouse
 
 The warehouse follows the instructor's Bronze → Silver → Gold layout:
