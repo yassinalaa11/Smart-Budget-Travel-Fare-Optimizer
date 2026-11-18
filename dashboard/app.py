@@ -1,7 +1,5 @@
 import os
 from datetime import date
-from pathlib import Path
-
 import httpx
 import pandas as pd
 import streamlit as st
@@ -48,27 +46,24 @@ observed_tab, serpapi_tab, hotel_tab, prediction_tab = st.tabs(
 )
 
 
-@st.cache_data
+@st.cache_data(ttl=60)
 def load_serpapi_snapshot() -> pd.DataFrame:
-    path = Path("/app/data/cai_international_flights.csv")
-    frame = pd.read_csv(path)
-    frame["collected_at"] = pd.to_datetime(frame["collected_at"], errors="coerce")
-    frame["flight_date"] = pd.to_datetime(frame["flight_date"], errors="coerce")
-    frame["price_egp"] = pd.to_numeric(frame["price_egp"], errors="coerce")
-    frame["duration_min"] = pd.to_numeric(frame["duration_min"], errors="coerce")
-    frame["stops"] = pd.to_numeric(frame["stops"], errors="coerce")
+    frame = pd.DataFrame(get_json("/api/v1/serpapi/flights?limit=2000"))
+    for column in ["min_total_price", "median_total_price", "offer_count", "response_count"]:
+        if column in frame:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
     return frame
 
 
-@st.cache_data
+@st.cache_data(ttl=60)
 def load_serpapi_hotels() -> pd.DataFrame:
-    path = Path("/app/data/destination_hotels.csv")
-    frame = pd.read_csv(path)
-    frame["collected_at"] = pd.to_datetime(frame["collected_at"], errors="coerce")
-    frame["check_in"] = pd.to_datetime(frame["check_in"], errors="coerce")
-    frame["check_out"] = pd.to_datetime(frame["check_out"], errors="coerce")
-    for column in ["price_per_night_egp", "total_price_egp", "rating", "reviews", "hotel_class"]:
-        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame = pd.DataFrame(get_json("/api/v1/serpapi/hotels?limit=2000"))
+    for column in [
+        "nightly_price", "total_price_egp", "median_total_price", "observation_count",
+        "hotel_class", "rating", "review_count",
+    ]:
+        if column in frame:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
     return frame
 
 with observed_tab:
@@ -89,16 +84,34 @@ with observed_tab:
                 st.info("No travel dates are available for this route yet.")
             else:
                 labels = {
-                    f"Depart {item['departure_date']} · return {item['return_date']}": item
+                    (
+                        f"Depart {item['departure_date']} · "
+                        + (f"return {item['return_date']}" if item["return_date"] else "one-way")
+                    ): item
                     for item in departures
                 }
                 choice = st.selectbox("Travel dates", list(labels), key="observed_dates")
                 dates = labels[choice]
-                history = get_json(
+                history_path = (
                     f"/api/v1/routes/{selected_route}/price-history"
-                    f"?departure_date={dates['departure_date']}&return_date={dates['return_date']}"
+                    f"?departure_date={dates['departure_date']}"
                 )
+                if dates["return_date"]:
+                    history_path += f"&return_date={dates['return_date']}"
+                history = get_json(history_path)
                 points = history["points"]
+                providers = sorted({point["provider"] for point in points})
+                if providers:
+                    provider = st.selectbox("Data provider", providers, key="observed_provider")
+                    points = [point for point in points if point["provider"] == provider]
+                currencies = sorted({point["currency_code"] for point in points})
+                if currencies:
+                    currency = st.selectbox("Currency", currencies, key="observed_currency")
+                    points = [point for point in points if point["currency_code"] == currency]
+                cabins = sorted({point["cabin_class"] for point in points if point.get("cabin_class")})
+                if cabins:
+                    cabin = st.selectbox("Cabin class", cabins, key="observed_cabin")
+                    points = [point for point in points if point.get("cabin_class") == cabin]
                 if any(point["contains_demo_data"] for point in points):
                     st.warning("This route includes mock/demo observations.")
                 elif os.getenv("SMARTFARE_PROVIDER", "mock").strip().lower() == "travelpayouts":
@@ -111,7 +124,20 @@ with observed_tab:
                     c.metric("Observation days", len({p["observed_date"] for p in points}))
                     chart = pd.DataFrame(points)
                     chart["observed_date"] = pd.to_datetime(chart["observed_date"])
-                    st.line_chart(chart.set_index("observed_date")[["min_total_price", "median_total_price"]])
+                    for column in ["min_total_price", "median_total_price"]:
+                        chart[column] = pd.to_numeric(chart[column], errors="coerce")
+                    observation_days = chart["observed_date"].nunique()
+                    if observation_days > 1:
+                        st.line_chart(chart.set_index("observed_date")[["min_total_price", "median_total_price"]])
+                    else:
+                        st.bar_chart(pd.DataFrame(
+                            {"price": [
+                                float(latest["min_total_price"]),
+                                float(latest["median_total_price"]),
+                            ]},
+                            index=["Minimum", "Median"],
+                        ))
+                        st.info("Only one observation day is available. This is a price summary for that day, not a trend over time.")
                     st.dataframe(pd.DataFrame(points), use_container_width=True, hide_index=True)
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         st.error(f"Could not load the observed sample from the API: {exc}")
@@ -125,36 +151,32 @@ with serpapi_tab:
         if offers.empty:
             st.info("The SerpApi CSV has no flight rows.")
         else:
-            collected = offers["collected_at"].dropna()
+            collected = offers["observed_date"].dropna()
             if not collected.empty:
-                st.info(f"Snapshot collected: {collected.min().strftime('%Y-%m-%d %H:%M:%S')}")
-            routes = sorted((offers.origin.astype(str) + "-" + offers.destination.astype(str)).unique())
+                st.info(f"Snapshot observation date: {collected.min()}")
+            routes = sorted(offers["route_id"].unique())
             route = st.selectbox("Route", routes, key="serpapi_route")
-            route_offers = offers[
-                (offers.origin.astype(str) + "-" + offers.destination.astype(str)) == route
-            ].copy()
-            priced = route_offers.dropna(subset=["price_egp"])
+            route_offers = offers[offers.route_id == route].copy()
+            priced = route_offers.dropna(subset=["min_total_price"])
             a, b, c = st.columns(3)
-            a.metric("Offers", len(route_offers))
+            a.metric("Offers", int(route_offers.offer_count.sum()))
             if not priced.empty:
-                b.metric("Lowest listed price", f"EGP {priced.price_egp.min():,.0f}")
-                c.metric("Median listed price", f"EGP {priced.price_egp.median():,.0f}")
-            if route_offers.price_egp.isna().any():
-                st.warning(f"{int(route_offers.price_egp.isna().sum())} offer(s) have no price and are excluded from price summaries.")
+                b.metric("Lowest listed price", f"{priced.currency_code.iloc[0]} {priced.min_total_price.min():,.0f}")
+                c.metric("Median of group medians", f"{priced.currency_code.iloc[0]} {priced.median_total_price.median():,.0f}")
             if not priced.empty:
-                daily = priced.groupby("flight_date", as_index=True).price_egp.min().rename("minimum_listed_price_egp")
-                st.line_chart(daily)
+                priced["departure_date"] = pd.to_datetime(priced["departure_date"])
+                st.line_chart(priced.set_index("departure_date")[["min_total_price", "median_total_price"]])
             display_columns = [
-                "flight_date", "airline", "flight_number", "departure_time", "arrival_time",
-                "duration_min", "stops", "price_egp", "price_level", "airplane", "co2_g",
+                "departure_date", "return_date", "min_total_price", "median_total_price",
+                "currency_code", "offer_count", "response_count",
             ]
             st.dataframe(
-                route_offers[display_columns].sort_values(["flight_date", "price_egp"], na_position="last"),
+                route_offers[display_columns].sort_values("departure_date"),
                 use_container_width=True, hide_index=True,
             )
-            st.caption("The CSV has one collection timestamp. The chart compares offer prices across travel dates; it does not show how a fare changed over time.")
-    except (FileNotFoundError, KeyError, ValueError) as exc:
-        st.error(f"Could not load the SerpApi CSV: {exc}")
+            st.caption("These dbt mart results are grouped by departure date. The snapshot has one observation date, so it does not show price changes over time.")
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        st.error(f"Could not load SerpApi flight marts from the API: {exc}")
 
 with hotel_tab:
     st.subheader("Hotel offers collected through SerpApi")
@@ -165,30 +187,31 @@ with hotel_tab:
         if hotels.empty:
             st.info("The SerpApi hotel CSV has no rows.")
         else:
-            collected = hotels["collected_at"].dropna()
+            collected = hotels["observed_date"].dropna()
             if not collected.empty:
-                st.info(f"Snapshot collected: {collected.min().strftime('%Y-%m-%d %H:%M:%S')}")
-            destinations = sorted(hotels["destination"].dropna().unique())
+                st.info(f"Snapshot observation date: {collected.min()}")
+            destinations = sorted(hotels["city_iata"].dropna().unique())
             destination = st.selectbox("Destination", destinations, key="serpapi_hotel_destination")
-            selection = hotels[hotels["destination"] == destination].copy()
-            priced = selection.dropna(subset=["price_per_night_egp"])
+            selection = hotels[hotels["city_iata"] == destination].copy()
+            priced = selection.dropna(subset=["nightly_price"])
             a, b, c = st.columns(3)
-            a.metric("Hotel offers", len(selection))
+            a.metric("Hotel offers", int(selection.observation_count.sum()))
             if not priced.empty:
-                b.metric("Lowest nightly price", f"EGP {priced.price_per_night_egp.min():,.0f}")
-                c.metric("Median nightly price", f"EGP {priced.price_per_night_egp.median():,.0f}")
+                b.metric("Lowest nightly price", f"{priced.currency_code.iloc[0]} {priced.nightly_price.min():,.0f}")
+                c.metric("Lowest stay total", f"{priced.currency_code.iloc[0]} {priced.total_price_egp.min():,.0f}")
             if not priced.empty:
-                chart = priced.nsmallest(15, "price_per_night_egp").set_index("name")[["price_per_night_egp"]]
+                chart = priced.nsmallest(15, "nightly_price").set_index("hotel_name")[["nightly_price"]]
                 st.bar_chart(chart)
-            columns = ["name", "type", "hotel_class", "rating", "reviews", "check_in", "check_out",
-                       "price_per_night_egp", "total_price_egp", "free_cancellation", "amenities"]
+            columns = ["hotel_name", "room_type", "hotel_class", "rating", "review_count",
+                       "checkin_date", "checkout_date", "nightly_price", "total_price_egp",
+                       "currency_code", "free_cancellation", "amenities"]
             st.dataframe(
-                selection[columns].sort_values("price_per_night_egp", na_position="last"),
+                selection[columns].sort_values("nightly_price", na_position="last"),
                 use_container_width=True, hide_index=True,
             )
-            st.caption("The file contains one collection timestamp and one check-in/check-out window across destinations. It cannot show price changes over time.")
-    except (FileNotFoundError, KeyError, ValueError) as exc:
-        st.error(f"Could not load the SerpApi hotel CSV: {exc}")
+            st.caption("These results come from the dbt hotel mart for a single observation date and one stay window; they do not show price changes over time.")
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        st.error(f"Could not load SerpApi hotel marts from the API: {exc}")
 
 with prediction_tab:
     st.subheader("When might prices be lower?")

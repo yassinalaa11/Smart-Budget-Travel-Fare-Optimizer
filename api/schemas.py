@@ -5,9 +5,11 @@ from pydantic import BaseModel, ConfigDict
 
 
 class PriceHistoryPoint(BaseModel):
+    provider: str
     observed_date: date
     departure_date: date
-    return_date: date
+    return_date: date | None = None
+    cabin_class: str
     min_total_price: Decimal
     median_total_price: Decimal
     currency_code: str
@@ -34,4 +36,4 @@ class RouteSummary(BaseModel):
 
 class DepartureOption(BaseModel):
     departure_date: date
-    return_date: date
+    return_date: date | None = None

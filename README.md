@@ -1,14 +1,15 @@
 # SmartFare
 
-SmartFare is a Docker-based prototype for collecting and exploring flight prices, with an initial foundation for hotel-price data. It uses PostgreSQL for storage, Prefect for orchestration, FastAPI for the API, Streamlit for the dashboard, and dbt for transformations.
+SmartFare is a Docker-based ETL and travel-price analytics prototype. PostgreSQL stores raw provider responses and the Gold warehouse, Prefect orchestrates provider ingestion, dbt transforms data, FastAPI serves warehouse results, and Streamlit presents the dashboard.
 
 ## Current status
 
 - Flight ingestion supports a mock provider and configured external providers.
 - Raw provider responses and ingestion request logs are stored in PostgreSQL.
-- dbt builds staging, quality, and flight analytics views.
-- FastAPI and Streamlit provide access to the current flight-price results.
-- Hotel import and transformation code is present, but requires a real, permitted hotel-price CSV source.
+- Bronze stores raw provider payloads and request audit records in PostgreSQL.
+- Silver dbt models parse and normalize flight and hotel data, deduplicate flights, and flag quality issues.
+- Gold dbt models build the `dim_date`, `dim_route`, and `dim_hotel` dimensions and the flight and hotel fact tables.
+- FastAPI and Streamlit read the curated warehouse results.
 
 ## Instructor demo: synthetic prediction prototype
 
@@ -44,6 +45,38 @@ Mock and synthetic data are for development only. They must not be presented as 
    - Prefect UI: <http://localhost:4200>
 
 The default provider is `mock`, so the app can start without provider credentials. Real API ingestion requires valid credentials and is subject to provider availability and usage terms.
+
+## ETL and data warehouse
+
+The warehouse follows the instructor's Bronze → Silver → Gold layout:
+
+1. **Bronze:** `raw.api_responses` keeps the provider payload, request parameters, response status, payload hash, and ingestion timestamps.
+2. **Silver:** `analytics_staging` parses provider JSON into typed columns; `analytics_intermediate` deduplicates flight offers and marks quality issues.
+3. **Gold:** `analytics_marts` contains `dim_date`, `dim_route`, `dim_hotel`, `fct_flight_price_observations`, and `fct_hotel_price_observations`.
+
+Fact table grains and dimension keys are documented in [WAREHOUSE_DESIGN.md](WAREHOUSE_DESIGN.md).
+
+After starting the services, load the committed SerpApi snapshots into Bronze and rebuild the warehouse:
+
+```powershell
+docker compose exec ingestion-runner python -m ingestion.import_serpapi_snapshots /app/data/cai_international_flights.csv /app/data/destination_hotels.csv
+docker compose exec api dbt run --project-dir /app/transform --profiles-dir /app/transform
+```
+
+The importer skips exact duplicate payloads when rerun. Check the raw source counts:
+
+```powershell
+docker compose exec postgres psql -U smartfare -d smartfare -c "SELECT endpoint, count(*) FROM raw.api_responses WHERE provider='serpapi_snapshot' GROUP BY endpoint;"
+```
+
+Check the Gold fact-to-dimension keys:
+
+```powershell
+docker compose exec postgres psql -U smartfare -d smartfare -c "SELECT count(*) AS fact_rows, count(*) FILTER (WHERE route_key IS NULL) AS missing_route_key, count(*) FILTER (WHERE observed_date_key IS NULL) AS missing_observed_date_key, count(*) FILTER (WHERE departure_date_key IS NULL) AS missing_departure_date_key FROM analytics_marts.fct_flight_price_observations;"
+docker compose exec postgres psql -U smartfare -d smartfare -c "SELECT count(*) AS fact_rows, count(*) FILTER (WHERE hotel_key IS NULL) AS missing_hotel_key, count(*) FILTER (WHERE observed_date_key IS NULL) AS missing_observed_date_key, count(*) FILTER (WHERE checkin_date_key IS NULL) AS missing_checkin_date_key FROM analytics_marts.fct_hotel_price_observations;"
+```
+
+The SerpApi files are single snapshots, not historical price series. They demonstrate ETL and support descriptive analysis but cannot train a trustworthy best-time-to-travel model. The prediction demo continues to use clearly labeled synthetic data.
 
 ## Run transformations
 

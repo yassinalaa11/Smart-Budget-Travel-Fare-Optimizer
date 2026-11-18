@@ -61,7 +61,7 @@ join median_history as history
  and history.origin_iata = offer.origin_iata
  and history.destination_iata = offer.destination_iata
  and history.departure_date = offer.departure_date
- and history.return_date = offer.return_date
+ and history.return_date is not distinct from offer.return_date
  and history.observed_date = offer.observed_at::date
  and history.cabin_class = offer.cabin_class
  and history.currency_code = offer.currency_code
