@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -11,7 +12,12 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-DATA_DIR = Path("/app/data")
+DATA_DIR = Path(
+    os.getenv(
+        "SMARTFARE_DATA_DIR",
+        "/app/data" if Path("/app/data").exists() else Path(__file__).resolve().parent.parent / "data",
+    )
+)
 
 
 def _pipeline(categorical: list[str], numeric: list[str]) -> Pipeline:
