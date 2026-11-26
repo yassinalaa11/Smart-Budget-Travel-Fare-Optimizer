@@ -1,0 +1,32 @@
+name: Daily SerpApi collection
+
+on:
+  schedule:
+    - cron: "0 6 * * *"      # 06:00 UTC = 08:00 Cairo (may start a few minutes late)
+  workflow_dispatch:          # lets you run it manually from the Actions tab
+    inputs:
+      upload_test:
+        description: "Only test the Databricks upload (uses 0 SerpApi searches)"
+        type: boolean
+        default: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r collector/requirements.txt
+      - name: Collect and upload to Databricks
+        env:
+          SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          if [ "${{ inputs.upload_test }}" = "true" ]; then
+            python collector/collect_daily.py --upload-test
+          else
+            python collector/collect_daily.py
+          fi
