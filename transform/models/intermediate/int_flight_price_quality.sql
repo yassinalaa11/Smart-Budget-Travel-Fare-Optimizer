@@ -1,6 +1,26 @@
 {{ config(materialized='view') }}
 
-with daily_route_medians as (
+with offers_with_fx as (
+    select
+        offer.*,
+        fx.rate as fx_rate_to_usd,
+        case
+            when offer.currency_code = 'USD' then offer.total_price::numeric(12, 2)
+            when fx.rate is not null and fx.rate > 0
+                then round((offer.total_price / fx.rate)::numeric, 2)
+            else null
+        end as total_price_usd
+    from {{ ref('int_deduplicated_flights') }} as offer
+    left join lateral (
+        select r.rate
+        from {{ ref('stg_fx_rates') }} as r
+        where r.quote_currency = offer.currency_code
+        order by
+            case when r.rate_date <= offer.observed_at::date then 0 else 1 end,
+            abs(r.rate_date - offer.observed_at::date)
+        limit 1
+    ) as fx on true
+), daily_route_medians as (
     select
         provider,
         origin_iata,
@@ -12,8 +32,8 @@ with daily_route_medians as (
         currency_code,
         percentile_cont(0.5) within group (order by total_price)::numeric
             as median_price
-    from {{ ref('int_deduplicated_flights') }}
-    where total_price is not null
+    from offers_with_fx
+    where total_price is not null and total_price > 0
     group by
         provider,
         origin_iata,
@@ -45,8 +65,13 @@ select
     history.previous_median,
     history.prior_median,
     case
-        when offer.currency_code = 'USD' and offer.total_price < 15
-            then 'usd_price_below_15'
+        when offer.total_price is null or offer.total_price <= 0
+            then 'non_positive_price'
+        when offer.return_date is not null and offer.return_date < offer.departure_date
+            then 'return_before_departure'
+        when (offer.total_price_usd is not null and offer.total_price_usd < 15)
+          or (offer.currency_code = 'USD' and offer.total_price < 15)
+            then 'price_usd_below_15'
         when history.previous_median is not null
          and history.prior_median is not null
          and history.previous_median between history.prior_median * 0.75
@@ -55,8 +80,8 @@ select
             then 'price_spike_over_4x_stable_baseline'
         else null
     end as quality_reason
-from {{ ref('int_deduplicated_flights') }} as offer
-join median_history as history
+from offers_with_fx as offer
+left join median_history as history
   on history.provider = offer.provider
  and history.origin_iata = offer.origin_iata
  and history.destination_iata = offer.destination_iata

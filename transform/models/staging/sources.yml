@@ -5,3 +5,8 @@ sources:
     schema: raw
     tables:
       - name: api_responses
+  - name: public
+    schema: public
+    tables:
+      - name: fx_rates
+      - name: ingestion_request_log

@@ -7,6 +7,18 @@ models:
         tests:
           - not_null
           - unique
+      - name: is_origin_public_holiday
+        tests:
+          - not_null
+      - name: is_destination_public_holiday
+        tests:
+          - not_null
+      - name: school_break_flag
+        tests:
+          - not_null
+      - name: days_to_nearest_holiday
+        tests:
+          - not_null
 
   - name: dim_route
     columns:
@@ -28,6 +40,10 @@ models:
 
   - name: fct_flight_price_observations
     columns:
+      - name: flight_observation_key
+        tests:
+          - not_null
+          - unique
       - name: route_key
         tests:
           - not_null
@@ -52,6 +68,10 @@ models:
 
   - name: fct_hotel_price_observations
     columns:
+      - name: hotel_observation_key
+        tests:
+          - not_null
+          - unique
       - name: hotel_key
         tests:
           - not_null
@@ -82,6 +102,10 @@ models:
 
   - name: ml_features_flight_pricing
     columns:
+      - name: flight_observation_key
+        tests:
+          - not_null
+          - unique
       - name: route_id
         tests:
           - not_null
@@ -92,5 +116,23 @@ models:
         tests:
           - not_null
       - name: min_total_price
+        tests:
+          - not_null
+      - name: day_of_year_sin
+        tests:
+          - not_null
+      - name: day_of_year_cos
+        tests:
+          - not_null
+
+  - name: ops_ingestion_completeness
+    columns:
+      - name: provider
+        tests:
+          - not_null
+      - name: ingested_date
+        tests:
+          - not_null
+      - name: route_coverage_pct
         tests:
           - not_null

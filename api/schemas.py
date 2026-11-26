@@ -62,9 +62,13 @@ class CheapestWindowItem(BaseModel):
     return_date: date | None = None
     flight_price: Decimal
     flight_currency: str
+    flight_price_usd: Decimal | None = None
     hotel_total_price: Decimal | None = None
     hotel_currency: str | None = None
+    hotel_total_price_usd: Decimal | None = None
     combined_total_price: Decimal | None = None
+    combined_total_price_usd: Decimal | None = None
+    hotel_match_type: str = "none"
     contains_demo_data: bool
 
 
