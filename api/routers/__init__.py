@@ -1,1 +1,0 @@
-"""Versioned FastAPI route modules."""
