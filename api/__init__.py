@@ -1,1 +1,0 @@
-"""SmartFare HTTP API."""
