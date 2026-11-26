@@ -6,6 +6,7 @@ from prefect import flow, get_run_logger, task
 from prefect.runtime import flow_run
 from prefect.server.schemas.schedules import CronSchedule
 
+from ingestion.alert_checker import run_price_alert_check
 from ingestion.alerts import send_alert
 from ingestion.collector import run_collection
 from ingestion.fx_rates import run_fx_collection
@@ -63,6 +64,11 @@ async def test_warehouse() -> None:
     await _run_dbt_command("test")
 
 
+@task(name="check-price-drop-alerts")
+async def check_alerts() -> dict:
+    return await run_price_alert_check()
+
+
 @flow(name="smartfare-daily-ingest")
 async def daily_ingest() -> dict[str, int | str]:
     logger = get_run_logger()
@@ -85,6 +91,13 @@ async def daily_ingest() -> dict[str, int | str]:
         await build_warehouse()
         await test_warehouse()
 
+        alert_summary = await check_alerts()
+        logger.info(
+            "Price alerts evaluated: checked=%s triggered=%s",
+            alert_summary.get("checked", 0),
+            alert_summary.get("triggered", 0),
+        )
+
         if flight_fail or hotel_fail:
             raise RuntimeError(
                 f"Partial provider failures: flights_failed={flight_fail}, hotels_failed={hotel_fail}"
@@ -94,6 +107,7 @@ async def daily_ingest() -> dict[str, int | str]:
             "fx_rates": fx_count,
             "flights_succeeded": flight_ok,
             "hotels_succeeded": hotel_ok,
+            "alerts_triggered": int(alert_summary.get("triggered", 0)),
             "warehouse": "built_and_tested",
         }
     except Exception as exc:

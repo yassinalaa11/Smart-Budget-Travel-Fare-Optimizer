@@ -12,3 +12,10 @@ transform/dbt_packages/
 transform/logs/
 transform/.user.yml
 *.log
+
+# Generated ML artifacts and 3-year synthetic CSVs
+artifacts/*.joblib
+artifacts/scorecard.json
+data/historical_flights_3yrs.csv
+data/historical_hotels_3yrs.csv
+*.zip

@@ -14,6 +14,7 @@ services:
       - ./db/migrations/001_raw_schema.sql:/docker-entrypoint-initdb.d/001_raw_schema.sql:ro
       - ./db/migrations/002_dimensions.sql:/docker-entrypoint-initdb.d/002_dimensions.sql:ro
       - ./db/migrations/003_fx_rates.sql:/docker-entrypoint-initdb.d/003_fx_rates.sql:ro
+      - ./db/migrations/004_click_events_and_alerts.sql:/docker-entrypoint-initdb.d/004_click_events_and_alerts.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -41,6 +42,7 @@ services:
       context: .
     volumes:
       - ./api:/app/api
+      - ./ingestion:/app/ingestion
       - ./ml:/app/ml
       - ./transform:/app/transform
       - ./data:/app/data:ro
@@ -54,6 +56,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       SMARTFARE_DATA_DIR: /app/data
       SMARTFARE_ARTIFACTS_DIR: /app/artifacts
+      SMARTFARE_PUBLIC_API_URL: ${SMARTFARE_PUBLIC_API_URL:-http://localhost:8000}
+      TRAVELPAYOUTS_MARKER: ${TRAVELPAYOUTS_MARKER:-smartfare_demo}
       AMADEUS_CLIENT_ID: ${AMADEUS_CLIENT_ID:-}
       AMADEUS_CLIENT_SECRET: ${AMADEUS_CLIENT_SECRET:-}
       AMADEUS_BASE_URL: ${AMADEUS_BASE_URL:-https://test.api.amadeus.com}
@@ -63,6 +67,9 @@ services:
       SMARTFARE_HOTEL_PROVIDER: ${SMARTFARE_HOTEL_PROVIDER:-mock}
       SMARTFARE_MAX_REQUESTS_PER_RUN: ${SMARTFARE_MAX_REQUESTS_PER_RUN:-25}
       SMARTFARE_MAX_HOTEL_REQUESTS_PER_RUN: ${SMARTFARE_MAX_HOTEL_REQUESTS_PER_RUN:-15}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -88,6 +95,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PREFECT_API_URL: http://prefect:4200/api
       SMARTFARE_API_URL: http://api:8000
+      SMARTFARE_PUBLIC_API_URL: ${SMARTFARE_PUBLIC_API_URL:-http://localhost:8000}
       SMARTFARE_DATA_DIR: /app/data
       SMARTFARE_ARTIFACTS_DIR: /app/artifacts
       AMADEUS_CLIENT_ID: ${AMADEUS_CLIENT_ID:-}
@@ -118,6 +126,7 @@ services:
     command: streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
     environment:
       SMARTFARE_API_URL: http://api:8000
+      SMARTFARE_PUBLIC_API_URL: ${SMARTFARE_PUBLIC_API_URL:-http://localhost:8000}
       SMARTFARE_PROVIDER: ${SMARTFARE_PROVIDER:-mock}
     ports:
       - "${STREAMLIT_PORT:-8501}:8501"

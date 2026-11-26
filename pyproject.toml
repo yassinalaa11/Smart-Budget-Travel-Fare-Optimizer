@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smartfare"
-version = "0.2.0"
+version = "0.3.0"
 description = "Travel price intelligence and recommendation platform"
 requires-python = ">=3.12"
 dependencies = [
@@ -16,6 +16,7 @@ dependencies = [
   "joblib>=1.4,<2",
   "numpy>=1.26,<3",
   "pandas>=2.2,<3",
+  "plotly>=5.24,<7",
   "prefect>=2.20,<3",
   "pydantic-settings>=2.6,<3",
   "scikit-learn>=1.5,<2",

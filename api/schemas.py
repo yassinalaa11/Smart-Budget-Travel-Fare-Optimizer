@@ -1,8 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PriceHistoryPoint(BaseModel):
@@ -158,3 +159,111 @@ class MLDecisionResponse(BaseModel):
     expected_min_price_p50: float | None = None
     expected_min_price_p90: float | None = None
     reason: str
+
+
+class BookingCurvePoint(BaseModel):
+    days_to_departure: int
+    min_price_usd: float
+    p25_price_usd: float
+    median_price_usd: float
+    p75_price_usd: float
+    sample_count: int
+
+
+class BookingCurveResponse(BaseModel):
+    route_id: str
+    source: str
+    is_synthetic: bool
+    currency: str = "USD"
+    points: list[BookingCurvePoint]
+
+
+class TripHeatmapCell(BaseModel):
+    departure_date: date
+    stay_nights: int
+    flight_price_usd: float
+    hotel_nightly_usd: float | None = None
+    hotel_total_usd: float | None = None
+    total_trip_usd: float
+    hotel_match_type: str
+
+
+class TripHeatmapResponse(BaseModel):
+    route_id: str
+    destination_iata: str
+    currency: str = "USD"
+    stay_nights_options: list[int]
+    cells: list[TripHeatmapCell]
+
+
+class ConversionWebhookRequest(BaseModel):
+    sub_id: str = Field(..., min_length=4, max_length=64)
+    booking_value_usd: Decimal = Field(..., gt=0)
+    commission_usd: Decimal = Field(..., ge=0)
+    status: str = Field(default="confirmed", pattern="^(pending|confirmed|cancelled)$")
+
+
+class ConversionWebhookResponse(BaseModel):
+    sub_id: str
+    route_id: str
+    partner: str
+    conversion_status: str
+    booking_value_usd: Decimal
+    commission_usd: Decimal
+    converted_at: datetime
+
+
+class ClickEventSummary(BaseModel):
+    sub_id: str
+    route_id: str
+    departure_date: date
+    return_date: date | None = None
+    partner: str
+    quoted_price: Decimal | None = None
+    quoted_currency: str | None = None
+    source_tab: str
+    clicked_at: datetime
+    conversion_status: str
+    booking_value_usd: Decimal | None = None
+    commission_usd: Decimal | None = None
+
+
+class AffiliateStatsResponse(BaseModel):
+    total_clicks: int
+    confirmed_conversions: int
+    conversion_rate_pct: float
+    total_booking_value_usd: float
+    total_commission_usd: float
+    rpm_usd: float
+    recent_clicks: list[ClickEventSummary]
+
+
+class PriceAlertCreate(BaseModel):
+    route_id: str = Field(..., min_length=7, max_length=7)
+    departure_date: date
+    return_date: date | None = None
+    target_price_usd: Decimal = Field(..., gt=0)
+    channel: str = Field(default="all", pattern="^(all|slack|telegram|email)$")
+    contact: str | None = Field(default=None, max_length=160)
+
+
+class PriceAlertItem(BaseModel):
+    alert_id: UUID
+    route_id: str
+    departure_date: date
+    return_date: date | None = None
+    target_price_usd: Decimal
+    channel: str
+    contact: str | None = None
+    is_active: bool
+    created_at: datetime
+    last_checked_at: datetime | None = None
+    last_triggered_at: datetime | None = None
+    last_observed_price_usd: Decimal | None = None
+    trigger_count: int
+
+
+class AlertCheckSummary(BaseModel):
+    checked: int
+    triggered: int
+    dispatched_alert_ids: list[str]

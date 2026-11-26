@@ -7,6 +7,9 @@ from typing import AsyncIterator
 import asyncpg
 from fastapi import FastAPI
 
+from api.routers.affiliate import router as affiliate_router
+from api.routers.alerts import router as alerts_router
+from api.routers.analytics import router as analytics_router
 from api.routers.predictions import router as predictions_router
 from api.routers.price_history import router as price_history_router
 from api.routers.recommendations import router as recommendations_router
@@ -27,10 +30,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.db_pool.close()
 
 
-app = FastAPI(title="SmartFare API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="SmartFare API", version="0.3.0", lifespan=lifespan)
 app.include_router(price_history_router, prefix="/api/v1")
 app.include_router(recommendations_router, prefix="/api/v1")
 app.include_router(predictions_router, prefix="/api/v1")
+app.include_router(analytics_router, prefix="/api/v1")
+app.include_router(affiliate_router, prefix="/api/v1")
+app.include_router(alerts_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])
