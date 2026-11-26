@@ -32,8 +32,11 @@ from urllib3.util.retry import Retry
 # ---- Search grid (edit here; keep total searches/day small) ----
 FLIGHT_DESTS = ["DXB", "JED", "RUH", "DOH", "AMM"]
 HOTEL_CITIES = {"DXB": "Dubai", "JED": "Jeddah"}
-LEAD_DAYS = 30          # flight departure = today + 30 days
-STAY_NIGHTS = 3         # hotel stay length, check-in = today + 30 days
+# Track ONE fixed departure date every day, so the same flight gets a price at 30, 29, 28 ... days
+# before departure. (A rolling "today + 30" would give every date only one observation = no history.)
+# When this date has passed, change it to a new date ~30 days ahead and commit.
+TARGET_DEPARTURE = "2026-12-26"
+STAY_NIGHTS = 3         # hotel stay length, check-in = TARGET_DEPARTURE
 ORIGIN = "CAI"
 
 VOLUME_DIR = "/Volumes/workspace/sbto_bronze/raw_files/daily"
@@ -165,9 +168,13 @@ def main() -> int:
     now = dt.datetime.now(timezone.utc)
     collected_at = now.isoformat(timespec="seconds")
     today = now.date()
-    flight_date = (today + dt.timedelta(days=LEAD_DAYS)).isoformat()
+    target = dt.date.fromisoformat(TARGET_DEPARTURE)
+    if target <= today:
+        print(f"TARGET_DEPARTURE {TARGET_DEPARTURE} has passed. Set a new future date in collect_daily.py.")
+        return 1
+    flight_date = target.isoformat()
     check_in = flight_date
-    check_out = (today + dt.timedelta(days=LEAD_DAYS + STAY_NIGHTS)).isoformat()
+    check_out = (target + dt.timedelta(days=STAY_NIGHTS)).isoformat()
 
     s = make_session()
     flights = collect_flights(s, api_key, collected_at, flight_date)
