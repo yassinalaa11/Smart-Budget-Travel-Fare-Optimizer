@@ -37,3 +37,38 @@ class RouteSummary(BaseModel):
 class DepartureOption(BaseModel):
     departure_date: date
     return_date: date | None = None
+
+
+class RecommendationResponse(BaseModel):
+    route_id: str
+    departure_date: date
+    return_date: date | None = None
+    currency_code: str
+    current_price: Decimal
+    route_p20_price: Decimal
+    route_median_price: Decimal
+    route_p80_price: Decimal
+    percentile_rank: float
+    days_to_departure: int
+    observation_days: int
+    signal: str
+    confidence: str
+    reason: str
+    contains_demo_data: bool
+
+
+class CheapestWindowItem(BaseModel):
+    departure_date: date
+    return_date: date | None = None
+    flight_price: Decimal
+    flight_currency: str
+    hotel_total_price: Decimal | None = None
+    hotel_currency: str | None = None
+    combined_total_price: Decimal | None = None
+    contains_demo_data: bool
+
+
+class CheapestWindowsResponse(BaseModel):
+    route_id: str
+    destination_iata: str
+    windows: list[CheapestWindowItem]

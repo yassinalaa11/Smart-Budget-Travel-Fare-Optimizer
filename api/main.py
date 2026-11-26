@@ -8,6 +8,7 @@ import asyncpg
 from fastapi import FastAPI
 
 from api.routers.price_history import router as price_history_router
+from api.routers.recommendations import router as recommendations_router
 
 
 @asynccontextmanager
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="SmartFare API", version="0.1.0", lifespan=lifespan)
 app.include_router(price_history_router, prefix="/api/v1")
+app.include_router(recommendations_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])

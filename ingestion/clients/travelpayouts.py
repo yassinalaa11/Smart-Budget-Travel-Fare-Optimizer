@@ -1,5 +1,3 @@
-"""Travelpayouts Flight Data API v2 client for cached calendar prices."""
-
 from __future__ import annotations
 
 import os
@@ -9,10 +7,11 @@ from typing import Any
 import httpx
 
 from ingestion.clients.amadeus import ProviderResponse
+from ingestion.http_retry import request_with_retry
 
 
 class TravelpayoutsClient:
-    """Fetch cached flight prices using the documented month-matrix endpoint."""
+    endpoint = "/v2/prices/month-matrix"
 
     def __init__(
         self,
@@ -54,10 +53,10 @@ class TravelpayoutsClient:
     ) -> ProviderResponse:
         if not self.token:
             raise RuntimeError("Set TRAVELPAYOUTS_TOKEN in .env")
-        # The month-matrix API returns cached calendar entries for the given
-        # route/month and stay duration. It is not an exact live-offer search.
-        response = await self._client.get(
-            f"{self.base_url}/v2/prices/month-matrix",
+        response = await request_with_retry(
+            self._client,
+            "GET",
+            f"{self.base_url}{self.endpoint}",
             params=self.request_parameters(
                 origin=origin,
                 destination=destination,

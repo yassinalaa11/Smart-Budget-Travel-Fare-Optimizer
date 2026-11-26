@@ -1,5 +1,3 @@
-"""Minimal Amadeus Self-Service Flight Offers Search client."""
-
 from __future__ import annotations
 
 import asyncio
@@ -11,6 +9,8 @@ from typing import Any
 
 import httpx
 
+from ingestion.http_retry import request_with_retry
+
 
 @dataclass(frozen=True)
 class ProviderResponse:
@@ -20,7 +20,7 @@ class ProviderResponse:
 
 
 class AmadeusClient:
-    """OAuth2 client credentials flow and Flight Offers Search wrapper."""
+    endpoint = "/v2/shopping/flight-offers"
 
     def __init__(
         self,
@@ -50,7 +50,9 @@ class AmadeusClient:
         async with self._token_lock:
             if self._token and time.monotonic() < self._token_expires_at - 30:
                 return self._token
-            response = await self._client.post(
+            response = await request_with_retry(
+                self._client,
+                "POST",
                 f"{self.base_url}/v1/security/oauth2/token",
                 data={
                     "grant_type": "client_credentials",
@@ -78,8 +80,10 @@ class AmadeusClient:
         max_results: int = 50,
     ) -> ProviderResponse:
         token = await self._access_token()
-        response = await self._client.get(
-            f"{self.base_url}/v2/shopping/flight-offers",
+        response = await request_with_retry(
+            self._client,
+            "GET",
+            f"{self.base_url}{self.endpoint}",
             params={
                 "originLocationCode": origin,
                 "destinationLocationCode": destination,

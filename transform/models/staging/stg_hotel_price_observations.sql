@@ -3,9 +3,21 @@
 with responses as (
     select id, payload, payload_hash, ingested_at
     from {{ source('raw', 'api_responses') }}
-    where provider in ('historical_csv_hotels', 'serpapi_snapshot')
+    where provider in (
+        'historical_csv_hotels',
+        'serpapi_snapshot',
+        'mock_hotels',
+        'serpapi_hotels',
+        'amadeus_hotels'
+    )
       and response_status between 200 and 299
-      and endpoint in ('/historical/hotels', '/google_hotels/csv_snapshot')
+      and endpoint in (
+        '/historical/hotels',
+        '/google_hotels/csv_snapshot',
+        '/mock/hotels',
+        '/google_hotels/live',
+        '/v3/shopping/hotel-offers'
+      )
 ), observations as (
     select responses.*, item.value as hotel
     from responses

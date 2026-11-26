@@ -12,6 +12,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/migrations/001_raw_schema.sql:/docker-entrypoint-initdb.d/001_raw_schema.sql:ro
+      - ./db/migrations/002_dimensions.sql:/docker-entrypoint-initdb.d/002_dimensions.sql:ro
+      - ./db/migrations/003_fx_rates.sql:/docker-entrypoint-initdb.d/003_fx_rates.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -51,8 +53,11 @@ services:
       AMADEUS_CLIENT_SECRET: ${AMADEUS_CLIENT_SECRET:-}
       AMADEUS_BASE_URL: ${AMADEUS_BASE_URL:-https://test.api.amadeus.com}
       TRAVELPAYOUTS_TOKEN: ${TRAVELPAYOUTS_TOKEN:-}
+      SERPAPI_API_KEY: ${SERPAPI_API_KEY:-}
       SMARTFARE_PROVIDER: ${SMARTFARE_PROVIDER:-mock}
+      SMARTFARE_HOTEL_PROVIDER: ${SMARTFARE_HOTEL_PROVIDER:-mock}
       SMARTFARE_MAX_REQUESTS_PER_RUN: ${SMARTFARE_MAX_REQUESTS_PER_RUN:-25}
+      SMARTFARE_MAX_HOTEL_REQUESTS_PER_RUN: ${SMARTFARE_MAX_HOTEL_REQUESTS_PER_RUN:-15}
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -65,6 +70,8 @@ services:
       context: .
     volumes:
       - ./data:/app/data:ro
+      - ./ingestion:/app/ingestion
+      - ./transform:/app/transform
     command: python -m ingestion.flows.daily_ingest
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-smartfare}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smartfare}
@@ -77,8 +84,14 @@ services:
       AMADEUS_CLIENT_SECRET: ${AMADEUS_CLIENT_SECRET:-}
       AMADEUS_BASE_URL: ${AMADEUS_BASE_URL:-https://test.api.amadeus.com}
       TRAVELPAYOUTS_TOKEN: ${TRAVELPAYOUTS_TOKEN:-}
+      SERPAPI_API_KEY: ${SERPAPI_API_KEY:-}
       SMARTFARE_PROVIDER: ${SMARTFARE_PROVIDER:-mock}
+      SMARTFARE_HOTEL_PROVIDER: ${SMARTFARE_HOTEL_PROVIDER:-mock}
       SMARTFARE_MAX_REQUESTS_PER_RUN: ${SMARTFARE_MAX_REQUESTS_PER_RUN:-25}
+      SMARTFARE_MAX_HOTEL_REQUESTS_PER_RUN: ${SMARTFARE_MAX_HOTEL_REQUESTS_PER_RUN:-15}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

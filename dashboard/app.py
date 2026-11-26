@@ -17,7 +17,7 @@ API_URL = os.getenv("SMARTFARE_API_URL", "http://localhost:8000").rstrip("/")
 
 st.set_page_config(page_title="SmartFare", page_icon="✈️", layout="wide")
 st.title("SmartFare")
-st.caption("A travel-price analytics prototype: observed sample data plus clearly labeled synthetic prediction demos.")
+st.caption("Travel-price analytics prototype: booking advisor, observed data, and synthetic prediction demos.")
 
 
 @st.cache_data(ttl=60)
@@ -41,8 +41,8 @@ def hotel_assets():
     return frame, hotels, model, metrics
 
 
-observed_tab, serpapi_tab, hotel_tab, prediction_tab = st.tabs(
-    ["Observed flight prices", "SerpApi flights", "SerpApi hotels", "Prediction demo"]
+advisor_tab, observed_tab, serpapi_tab, hotel_tab, prediction_tab = st.tabs(
+    ["Booking Advisor", "Observed flight prices", "SerpApi flights", "SerpApi hotels", "Prediction demo"]
 )
 
 
@@ -65,6 +65,71 @@ def load_serpapi_hotels() -> pd.DataFrame:
         if column in frame:
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
     return frame
+
+
+with advisor_tab:
+    st.subheader("Book Now vs. Wait & Cheapest Windows")
+    try:
+        routes = get_json("/api/v1/routes")
+        if not routes:
+            st.info("No warehouse routes available yet. Run ingestion and dbt first.")
+        else:
+            route_by_id = {r["route_id"]: r for r in routes}
+            selected_route = st.selectbox(
+                "Select route",
+                options=list(route_by_id),
+                key="advisor_route",
+                format_func=lambda k: f"{route_by_id[k]['origin_iata']} → {route_by_id[k]['destination_iata']}",
+            )
+            departures = get_json(f"/api/v1/routes/{selected_route}/departures")
+            if departures:
+                labels = {
+                    (
+                        f"Depart {d['departure_date']} · "
+                        + (f"return {d['return_date']}" if d["return_date"] else "one-way")
+                    ): d
+                    for d in departures
+                }
+                choice = st.selectbox("Select travel dates", list(labels), key="advisor_dates")
+                chosen = labels[choice]
+                rec_path = f"/api/v1/routes/{selected_route}/recommendation?departure_date={chosen['departure_date']}"
+                if chosen["return_date"]:
+                    rec_path += f"&return_date={chosen['return_date']}"
+                rec = get_json(rec_path)
+
+                if rec["contains_demo_data"]:
+                    st.warning("Demo/mock observations included. Not live booking advice.")
+
+                signal = rec["signal"]
+                if signal == "BOOK_NOW":
+                    st.success(f"**Recommendation: BOOK NOW** — {rec['reason']}")
+                elif signal == "WAIT":
+                    st.info(f"**Recommendation: WAIT** — {rec['reason']}")
+                else:
+                    st.warning(f"**Recommendation: NEUTRAL** — {rec['reason']}")
+
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Current Min Fare", f"{rec['currency_code']} {rec['current_price']}")
+                c2.metric("Route Median", f"{rec['currency_code']} {rec['route_median_price']}")
+                c3.metric("Percentile Rank", f"{int(rec['percentile_rank'] * 100)}th")
+                c4.metric("Confidence", rec["confidence"])
+
+            st.divider()
+            st.markdown("**Cheapest Travel Windows (Flights + Matched Hotels)**")
+            windows_resp = get_json(f"/api/v1/routes/{selected_route}/cheapest-windows?limit=20")
+            windows = windows_resp.get("windows", [])
+            if windows:
+                wdf = pd.DataFrame(windows)
+                for col in ["flight_price", "hotel_total_price", "combined_total_price"]:
+                    if col in wdf:
+                        wdf[col] = pd.to_numeric(wdf[col], errors="coerce")
+                st.bar_chart(wdf.set_index("departure_date")[["flight_price"]])
+                st.dataframe(wdf, use_container_width=True, hide_index=True)
+            else:
+                st.info("No travel windows available for this route.")
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        st.error(f"Could not load advisor data from API: {exc}")
+
 
 with observed_tab:
     st.subheader("Collected flight-price history")
@@ -142,6 +207,7 @@ with observed_tab:
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         st.error(f"Could not load the observed sample from the API: {exc}")
 
+
 with serpapi_tab:
     st.subheader("Flight offers collected through SerpApi")
     st.caption("A single API snapshot. These are offers available at collection time, not historical price observations.")
@@ -178,6 +244,7 @@ with serpapi_tab:
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         st.error(f"Could not load SerpApi flight marts from the API: {exc}")
 
+
 with hotel_tab:
     st.subheader("Hotel offers collected through SerpApi")
     st.caption("A single API snapshot for a fixed three-night stay. These are current offers, not historical nightly prices.")
@@ -212,6 +279,7 @@ with hotel_tab:
             st.caption("These results come from the dbt hotel mart for a single observation date and one stay window; they do not show price changes over time.")
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         st.error(f"Could not load SerpApi hotel marts from the API: {exc}")
+
 
 with prediction_tab:
     st.subheader("When might prices be lower?")
