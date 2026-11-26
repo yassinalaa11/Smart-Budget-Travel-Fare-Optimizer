@@ -6,7 +6,6 @@ under SerpApi's free plan of 250 successful searches/month.
 Usage:
     python collector/collect_daily.py --dry-run   # writes CSVs to ./out, no upload
     python collector/collect_daily.py             # uploads CSVs to the Databricks Volume
-    python collector/collect_daily.py --upload-test   # tests the Databricks upload only (0 searches)
 
 Environment variables:
     SERPAPI_API_KEY      SerpApi key
@@ -131,35 +130,17 @@ def collect_hotels(s, api_key, collected_at, check_in, check_out):
 
 
 def upload_to_volume(name: str, df: pd.DataFrame) -> None:
-    """Upload one CSV with a plain REST call (Files API), no SDK needed."""
-    host = os.environ["DATABRICKS_HOST"].strip().rstrip("/")
-    token = os.environ["DATABRICKS_TOKEN"].strip()
-    path = f"{VOLUME_DIR}/{name}"
-    r = requests.put(
-        f"{host}/api/2.0/fs/files{path}",
-        params={"overwrite": "true"},
-        headers={"Authorization": f"Bearer {token}",
-                 "Content-Type": "application/octet-stream"},
-        data=df.to_csv(index=False).encode("utf-8"),
-        timeout=120,
-    )
-    if not r.ok:
-        # Print the real reason (HTTP status + body) so failures are easy to diagnose.
-        print("UPLOAD FAILED", r.status_code, r.text[:500])
-        r.raise_for_status()
-    print("uploaded", path, len(df), "rows")
+    from databricks.sdk import WorkspaceClient  # reads DATABRICKS_HOST / DATABRICKS_TOKEN
+    w = WorkspaceClient()
+    data = df.to_csv(index=False).encode("utf-8")
+    w.files.upload(f"{VOLUME_DIR}/{name}", io.BytesIO(data), overwrite=True)
+    print("uploaded", f"{VOLUME_DIR}/{name}", len(df), "rows")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="write CSVs to ./out instead of uploading")
-    ap.add_argument("--upload-test", action="store_true",
-                    help="upload a tiny test file to Databricks; uses NO SerpApi searches")
     args = ap.parse_args()
-
-    if args.upload_test:
-        upload_to_volume("upload_test.csv", pd.DataFrame({"ok": [1]}))
-        return 0
 
     api_key = os.getenv("SERPAPI_API_KEY")
     if not api_key:
