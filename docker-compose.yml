@@ -41,7 +41,10 @@ services:
       context: .
     volumes:
       - ./api:/app/api
+      - ./ml:/app/ml
       - ./transform:/app/transform
+      - ./data:/app/data:ro
+      - ./artifacts:/app/artifacts
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-smartfare}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smartfare}
@@ -49,6 +52,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-smartfare}
       POSTGRES_USER: ${POSTGRES_USER:-smartfare}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SMARTFARE_DATA_DIR: /app/data
+      SMARTFARE_ARTIFACTS_DIR: /app/artifacts
       AMADEUS_CLIENT_ID: ${AMADEUS_CLIENT_ID:-}
       AMADEUS_CLIENT_SECRET: ${AMADEUS_CLIENT_SECRET:-}
       AMADEUS_BASE_URL: ${AMADEUS_BASE_URL:-https://test.api.amadeus.com}
@@ -71,7 +76,9 @@ services:
     volumes:
       - ./data:/app/data:ro
       - ./ingestion:/app/ingestion
+      - ./ml:/app/ml
       - ./transform:/app/transform
+      - ./artifacts:/app/artifacts
     command: python -m ingestion.flows.daily_ingest
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-smartfare}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smartfare}
@@ -80,6 +87,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-smartfare}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PREFECT_API_URL: http://prefect:4200/api
+      SMARTFARE_API_URL: http://api:8000
+      SMARTFARE_DATA_DIR: /app/data
+      SMARTFARE_ARTIFACTS_DIR: /app/artifacts
       AMADEUS_CLIENT_ID: ${AMADEUS_CLIENT_ID:-}
       AMADEUS_CLIENT_SECRET: ${AMADEUS_CLIENT_SECRET:-}
       AMADEUS_BASE_URL: ${AMADEUS_BASE_URL:-https://test.api.amadeus.com}

@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -55,6 +56,11 @@ class RecommendationResponse(BaseModel):
     confidence: str
     reason: str
     contains_demo_data: bool
+    model_stage: str = "phase_1_statistical_baseline"
+    drop_probability: float | None = None
+    expected_min_price_p10: float | None = None
+    expected_min_price_p50: float | None = None
+    expected_min_price_p90: float | None = None
 
 
 class CheapestWindowItem(BaseModel):
@@ -76,3 +82,79 @@ class CheapestWindowsResponse(BaseModel):
     route_id: str
     destination_iata: str
     windows: list[CheapestWindowItem]
+
+
+class ModelStatusResponse(BaseModel):
+    artifacts_loaded: bool
+    model_version: str | None = None
+    trained_at: str | None = None
+    live_model_status: str
+    live_promoted_routes: list[str]
+    synthetic_decision_status: str
+    synthetic_promoted_routes: list[str]
+    scorecard: dict[str, Any]
+
+
+class FlightCurvePoint(BaseModel):
+    days_to_departure: int
+    predicted_price: float
+
+
+class FlightCurvePredictionResponse(BaseModel):
+    route_id: str
+    currency: str
+    is_synthetic: bool
+    best_days_to_departure: int
+    lowest_predicted_price: float
+    metrics: dict[str, Any]
+    curve: list[FlightCurvePoint]
+
+
+class FlightCurveOptionsResponse(BaseModel):
+    routes: list[str]
+    currency_by_route: dict[str, str]
+
+
+class HotelCatalogItem(BaseModel):
+    hotel_id: str
+    name: str
+    city: str
+    stars: float
+
+
+class HotelCurvePoint(BaseModel):
+    days_to_checkin: int
+    predicted_nightly: float
+    predicted_stay_total: float
+
+
+class HotelCurvePredictionResponse(BaseModel):
+    hotel_id: str
+    hotel_name: str
+    city: str
+    currency: str
+    nights: int
+    adults: int
+    is_synthetic: bool
+    best_days_to_checkin: int
+    lowest_predicted_nightly: float
+    lowest_predicted_stay_total: float
+    metrics: dict[str, Any]
+    curve: list[HotelCurvePoint]
+
+
+class MLDecisionResponse(BaseModel):
+    route_id: str
+    departure_date: date
+    observed_date: date
+    currency_code: str
+    current_price: float
+    days_to_departure: int
+    model_stage: str
+    is_synthetic_model: bool
+    signal: str
+    drop_probability: float | None = None
+    expected_min_price_p10: float | None = None
+    expected_min_price_p50: float | None = None
+    expected_min_price_p90: float | None = None
+    reason: str

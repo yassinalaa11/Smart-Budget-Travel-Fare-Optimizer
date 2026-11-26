@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 import asyncpg
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from api.dependencies import DatabasePool
 from api.schemas import (
@@ -17,17 +17,18 @@ router = APIRouter(tags=["recommendations"])
 @router.get(
     "/routes/{route_id}/recommendation",
     response_model=RecommendationResponse,
-    summary="Get Book Now / Wait / Neutral baseline recommendation for a route",
+    summary="Get Book Now / Wait / Neutral recommendation (auto-promotes to ML when backtest gate passes)",
 )
 async def get_recommendation(
     route_id: str,
     departure_date: date,
+    request: Request,
     db: DatabasePool,
     return_date: date | None = None,
 ) -> RecommendationResponse:
     normalized_route_id = route_id.upper()
     latest_query = """
-        select observed_date, min_total_price, currency_code, contains_demo_data
+        select observed_date, min_total_price, min_total_price_usd, currency_code, contains_demo_data
         from analytics_marts.fct_flight_price_observations
         where route_id = $1
           and departure_date = $2
@@ -66,7 +67,49 @@ async def get_recommendation(
     pct_rank = round(float(stats["pct_rank"] or 0.5), 2)
     obs_days = int(stats["observation_days"] or 1)
 
-    if days_to_departure <= 14:
+    model_stage = "phase_1_statistical_baseline"
+    drop_prob: float | None = None
+    p10: float | None = None
+    p50: float | None = None
+    p90: float | None = None
+
+    registry = getattr(request.app.state, "model_registry", None)
+    ml_pred = None
+    if registry is not None and registry.is_live_route_promoted(normalized_route_id):
+        norm_price = float(latest["min_total_price_usd"] or current_price)
+        ml_pred = registry.predict_decision(
+            route_id=normalized_route_id,
+            observed_date=observed_date,
+            departure_date=departure_date,
+            current_price=norm_price,
+            allow_synthetic_prototype=False,
+        )
+
+    if ml_pred is not None:
+        model_stage = ml_pred["model_stage"]
+        drop_prob = ml_pred["drop_probability"]
+        p10 = ml_pred["expected_min_price_p10"]
+        p50 = ml_pred["expected_min_price_p50"]
+        p90 = ml_pred["expected_min_price_p90"]
+        if days_to_departure <= 14 or drop_prob < 0.30:
+            signal = "BOOK_NOW"
+            reason = (
+                f"Promoted ML model estimates {drop_prob * 100:.1f}% chance of a >=7% drop "
+                f"(expected USD {p10:.0f}-{p90:.0f})."
+            )
+        elif drop_prob >= 0.55:
+            signal = "WAIT"
+            reason = (
+                f"Promoted ML model estimates {drop_prob * 100:.1f}% chance of a >=7% drop "
+                f"(median expected floor USD {p50:.0f})."
+            )
+        else:
+            signal = "NEUTRAL"
+            reason = (
+                f"Promoted ML model shows balanced outlook ({drop_prob * 100:.1f}% drop probability; "
+                f"expected USD {p10:.0f}-{p90:.0f})."
+            )
+    elif days_to_departure <= 14:
         signal = "BOOK_NOW"
         reason = (
             f"Departure is in {days_to_departure} days (inside the 14-day advance-purchase cliff). "
@@ -109,6 +152,11 @@ async def get_recommendation(
         confidence=confidence,
         reason=reason,
         contains_demo_data=bool(latest["contains_demo_data"]),
+        model_stage=model_stage,
+        drop_probability=drop_prob,
+        expected_min_price_p10=p10,
+        expected_min_price_p50=p50,
+        expected_min_price_p90=p90,
     )
 
 
