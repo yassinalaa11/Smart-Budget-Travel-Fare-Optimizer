@@ -1,148 +1,122 @@
 # SmartFare
 
-SmartFare is a Docker-based ETL, data warehouse, and travel-price analytics platform. PostgreSQL stores raw provider responses, daily FX rates, and the Gold star schema; Prefect orchestrates daily partition maintenance, ingestion, transformations, and data quality tests; dbt builds and validates Silver and Gold models; FastAPI serves price history and booking recommendations; and Streamlit presents the interactive dashboard.
+SmartFare is a full-stack, Docker-based travel-price intelligence, data warehouse, and booking recommendation platform. PostgreSQL stores partitioned raw provider responses, daily FX rates, affiliate click attribution, price alerts, and a Medallion star schema; Prefect orchestrates daily ingestion, warehouse builds, alert checks, and weekly ML retraining; dbt transforms and tests Silver and Gold models; FastAPI serves analytics, recommendations, ML inference, and tracked affiliate redirects; and Streamlit delivers a six-tab interactive Plotly dashboard.
 
-## Current status
+## Architecture Overview
 
-- **Automated daily ingestion (flights, hotels, FX):** Supports `mock`, `amadeus`, and `travelpayouts` for flights; `mock`, `serpapi`, and `amadeus` for hotels; and daily USD-base exchange rates (`open.er-api.com`) stored in `public.fx_rates`.
-- **Resilience & observability:** Exponential backoff with jitter on HTTP `429` / `5xx` and transient network errors (`ingestion/http_retry.py`), request audit logging in `public.ingestion_request_log`, automated monthly partition maintenance on `raw.api_responses`, and Slack/Telegram failure alerts (`ingestion/alerts.py`).
-- **Bronze layer:** `raw.api_responses` (range-partitioned by `ingested_date`) preserves raw provider payloads, request parameters, HTTP status codes, SHA-256 payload hashes, and ingestion timestamps.
-- **Silver layer:** `analytics_staging` parses flight and hotel JSON (live, mock, historical CSV, and SerpApi snapshots) into typed columns; `analytics_intermediate` deduplicates flight offers and flags low-price anomalies and spikes.
-- **Gold layer & quality gates:** `analytics_marts` builds `dim_date`, `dim_route`, `dim_hotel`, `fct_flight_price_observations`, `fct_hotel_price_observations`, `quarantined_observations`, and the time-series feature table `ml_features_flight_pricing`, validated by 28 dbt tests (`not_null`, `unique`, and foreign-key `relationships`).
-- **Decision API & dashboard:** FastAPI serves price history, SerpApi snapshots, Phase 1 **Book Now / Wait / Neutral** recommendations, and combined Flight + Hotel cheapest-window rankings. Streamlit presents a five-tab dashboard.
+- **Automated Ingestion & Resilience (`ingestion/`):**
+  - Flight collectors supporting `mock`, `amadeus`, and `travelpayouts`.
+  - Hotel collectors supporting `mock`, `serpapi` (Google Hotels), and `amadeus` (v3 Hotel Offers).
+  - Daily USD-base exchange rate ingestion (`open.er-api.com`) into `public.fx_rates`.
+  - Shared exponential backoff with jitter (`ingestion/http_retry.py`) on HTTP `429`, `5xx`, and network timeouts.
+  - Automated monthly partition maintenance (`ingestion/partitions.py`) on `raw.api_responses`.
+  - Slack webhook and Telegram bot alerting (`ingestion/alerts.py`) for pipeline failures and price-drop triggers (`ingestion/alert_checker.py`).
+- **Bronze → Silver → Gold Warehouse (`transform/`):**
+  - **Bronze:** `raw.api_responses` (monthly range-partitioned), `public.ingestion_request_log`, `public.fx_rates`, `public.click_events`, `public.price_alerts`.
+  - **Silver:** `stg_flight_responses`, `stg_hotel_price_observations`, `stg_fx_rates`, `int_deduplicated_flights` (exact + codeshare itinerary deduplication), and `int_flight_price_quality` (USD-normalized anomaly & spike flagging).
+  - **Gold:** `dim_date` (Egypt/destination holidays, school breaks, days-to-holiday), `dim_route`, `dim_hotel`, incremental `fct_flight_price_observations`, incremental `fct_hotel_price_observations`, `quarantined_observations`, `ml_features_flight_pricing`, and `ops_ingestion_completeness` (95% route coverage SLA).
+- **Decision-Focused ML & Model Registry (`ml/`):**
+  - Binary classifier (`y_will_drop`: probability of a >=7% fare drop in the next 14 days) and `p10` / `p50` / `p90` quantile regressors (`HistGradientBoosting`), plus flight and hotel lead-time curve models.
+  - Leakage-free expanding-window backtesting (`observed_date + 14d < validation_start`) evaluating Brier score, ROC-AUC, Precision, P50 MAE, and **Simulated Traveler Regret ($)**.
+  - Automatic per-route promotion gate (`>=5%` gain over statistical baseline) keeping the live warehouse safely in Phase 1 cold-start baseline until sufficient daily history accumulates.
+  - Serialized `.joblib` artifacts and `scorecard.json` loaded by FastAPI at startup with hot-reload (`POST /api/v1/models/reload`).
+- **Product UI & Monetization (`api/`, `dashboard/`):**
+  - Interactive Plotly **Historical Booking Curve** (25th–75th percentile price cone) and **Total Trip Cost Heatmap** (Flight + Hotel USD matrix across stay lengths).
+  - Affiliate deep-link redirects (`GET /api/v1/redirect/book`) logging unique `sub_id` click events for Aviasales, Google Flights, and Skyscanner, plus conversion webhook attribution (`POST /api/v1/affiliate/conversions`) and live RPM tracking.
+  - End-to-end **Price Drop Alerts** (`POST /api/v1/alerts`, `POST /api/v1/alerts/check`) integrated into the daily Prefect flow.
 
-## Dashboard & instructor demo
+## Quick Start (Docker Compose)
 
-The Streamlit dashboard (`http://localhost:8501`) has five sections:
-
-1. **Booking Advisor:** Queries `/api/v1/routes/{route_id}/recommendation` and `/api/v1/routes/{route_id}/cheapest-windows` to display color-coded **BOOK NOW / WAIT / NEUTRAL** baseline signals, route percentiles, confidence level, and lowest-cost travel windows.
-2. **Observed flight prices:** Displays the provider sample collected by the ingestion pipeline and served from Gold marts.
-3. **SerpApi flights:** Displays `data/cai_international_flights.csv` via the warehouse marts as a separate one-time offer snapshot.
-4. **SerpApi hotels:** Displays `data/destination_hotels.csv` via the warehouse marts as a separate one-time snapshot with hotel listings and EGP prices.
-5. **Prediction demo:** Trains a Random Forest model on the supplied synthetic flight and hotel CSVs and compares its mean absolute error (MAE) with a simple median-price baseline using a chronological holdout.
-
-The SerpApi snapshots were collected at one timestamp. The flight file contains flight offers and the hotel file contains hotel prices for a fixed check-in/check-out window. Neither file represents historical price changes, and neither is used to train the synthetic prediction models. Keep API keys out of CSVs and the repository. Sources: [SerpApi Google Flights API](https://serpapi.com/google-flights-api) and [Google Hotels API](https://serpapi.com/google-hotels-api).
-
-The flight demo uses `data/synthetic_flights_calibrated.csv`. Its synthetic values were rescaled to match the min/median/max of a small Travelpayouts sample for CAI-DXB and CAI-IST. It is still synthetic, and the calibration sample is too small to validate a useful travel forecast. The hotel demo uses the supplied synthetic hotel files and has no real-price calibration. Present the output as a functioning ML prototype, not as booking advice or proven accuracy. See `data/synthetic_flights_calibration_notes.md` for provenance.
-
-Mock and synthetic data are for development only. They must not be presented as real prices or used to claim forecast accuracy. Check each data provider's terms before collecting or storing data.
-
-## Run with Docker Compose
-
-1. Copy `.env.example` to `.env`.
-2. Set a strong, local `POSTGRES_PASSWORD`.
-3. Optionally configure live providers and failure alerts in `.env`:
-   - `SMARTFARE_PROVIDER`: `mock` (default), `travelpayouts`, or `amadeus`
-   - `SMARTFARE_HOTEL_PROVIDER`: `mock` (default), `serpapi`, or `amadeus`
-   - Provider keys: `TRAVELPAYOUTS_TOKEN`, `AMADEUS_CLIENT_ID`, `AMADEUS_CLIENT_SECRET`, `SERPAPI_API_KEY`
-   - Optional alerts: `SLACK_WEBHOOK_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
-4. Start the services:
+1. Copy `.env.example` to `.env` and set a strong local `POSTGRES_PASSWORD`.
+2. Start the full stack:
 
    ```cmd
    docker compose up --build -d
    ```
 
-5. If upgrading an existing PostgreSQL volume, apply the FX rates migration once:
+3. If upgrading an existing PostgreSQL volume, apply migrations `003` and `004`:
 
    ```cmd
    docker compose exec -T postgres psql -U smartfare -d smartfare < db\migrations\003_fx_rates.sql
+   docker compose exec -T postgres psql -U smartfare -d smartfare < db\migrations\004_click_events_and_alerts.sql
+   ```
+
+4. Populate FX rates, SerpApi snapshots, and build/test the dbt warehouse:
+
+   ```cmd
+   docker compose exec ingestion-runner python -m ingestion.partitions
+   docker compose exec ingestion-runner python -m ingestion.fx_rates
+   docker compose exec ingestion-runner python -m ingestion.import_serpapi_snapshots /app/data/cai_international_flights.csv /app/data/destination_hotels.csv
+   docker compose exec api dbt run --full-refresh --project-dir /app/transform --profiles-dir /app/transform
+   docker compose exec api dbt test --project-dir /app/transform --profiles-dir /app/transform
+   ```
+
+5. *(Optional)* Generate the 3-year synthetic historical datasets from the SerpApi baselines (`scripts/build_historical_flights.py` and `scripts/build_historical_hotels.py`), train the ML registry inside Docker, and reload FastAPI:
+
+   ```cmd
+   python scripts\build_historical_flights.py --baseline data\cai_international_flights.csv --out data\historical_flights_3yrs.csv --rows-per-year 30000
+   python scripts\build_historical_hotels.py --baseline data\destination_hotels.csv --out data\historical_hotels_3yrs.csv --rows-per-year 30000
+   docker compose exec ingestion-runner python -m ml.train
+   curl -X POST http://localhost:8000/api/v1/models/reload
    ```
 
 6. Open the services:
-   - Streamlit dashboard: <http://localhost:8501>
-   - FastAPI documentation: <http://localhost:8000/docs>
-   - Prefect UI: <http://localhost:4200>
+   - **Streamlit Dashboard:** <http://localhost:8501>
+   - **FastAPI OpenAPI Docs:** <http://localhost:8000/docs>
+   - **Prefect UI:** <http://localhost:4200>
 
-Default providers are `mock` for both flights and hotels so the entire stack starts without external credentials.
+## Dashboard Tabs
 
-## Daily Prefect pipeline
+1. **Booking Advisor:** Book Now / Wait / Neutral recommendations, tracked affiliate deep-link buttons, Plotly 25th–75th percentile Booking Curve, Flight + Hotel Total Trip Cost Heatmap, and USD-normalized cheapest travel windows.
+2. **Price Alerts & Affiliate:** Create/deactivate target-price alerts, trigger immediate alert evaluation, inspect tracked `sub_id` click logs, simulate partner conversion webhooks, and track Commission USD & RPM.
+3. **Observed Flights:** Interactive Plotly trend charts of provider observations collected into Gold marts.
+4. **SerpApi Flights:** One-time Google Flights snapshot mart exploration by Cairo route.
+5. **SerpApi Hotels:** One-time Google Hotels snapshot mart exploration with lowest nightly rates by destination.
+6. **ML Registry & Forecasts:** Live vs. synthetic promotion gate status, walk-forward backtest scorecard (Brier, ROC-AUC, P50 MAE, Simulated Regret), and FastAPI-served flight & hotel lead-time curves.
 
-The scheduled Prefect flow (`smartfare-daily-ingest`) runs daily at **02:00 UTC** and executes six tasks in sequence:
+## API Endpoints
 
-1. `maintain-raw-partitions` — creates upcoming monthly partitions (`raw.api_responses_yYYYYmMM`) and migrates any matching rows out of `raw.api_responses_default`.
-2. `ingest-daily-fx-rates` — fetches daily USD-base exchange rates into `public.fx_rates` and `raw.api_responses`.
-3. `collect-flight-prices` — runs the configured flight provider (`mock`, `travelpayouts`, or `amadeus`).
-4. `collect-hotel-prices` — runs the configured hotel provider (`mock`, `serpapi`, or `amadeus`).
-5. `build-silver-and-gold-warehouse` — runs `dbt run`.
-6. `test-warehouse-quality` — runs `dbt test` (28 schema & referential integrity tests).
+Interactive schema documentation is available at <http://localhost:8000/docs>:
 
-If any task fails, the flow dispatches an alert to Slack and/or Telegram when configured.
+| Endpoint | Description |
+| :--- | :--- |
+| `GET /health` | Service liveness check |
+| `GET /api/v1/routes` | Tracked routes with price observations |
+| `GET /api/v1/routes/{route_id}/departures` | Available departure/return date pairs |
+| `GET /api/v1/routes/{route_id}/price-history` | Observed min and median fare time series |
+| `GET /api/v1/routes/{route_id}/recommendation` | Phase 1 statistical or promoted ML **BOOK_NOW / WAIT / NEUTRAL** decision |
+| `GET /api/v1/routes/{route_id}/cheapest-windows` | USD-normalized Flight + Hotel travel window rankings |
+| `GET /api/v1/routes/{route_id}/booking-curve` | 25th–75th percentile booking curve by lead days |
+| `GET /api/v1/routes/{route_id}/trip-heatmap` | Combined Flight + Hotel USD matrix across stay lengths |
+| `GET /api/v1/routes/{route_id}/ml-decision` | Direct classifier & quantile regressor decision output |
+| `GET /api/v1/models/status` & `POST /api/v1/models/reload` | Inspect scorecards and hot-reload `.joblib` artifacts |
+| `GET /api/v1/predict/flight` & `/predict/hotel` | FastAPI lead-time curve predictions |
+| `GET /api/v1/redirect/book` | Log `sub_id` click event and `302` redirect to booking partner |
+| `POST /api/v1/affiliate/conversions` & `GET /api/v1/affiliate/stats` | Attribute affiliate commission by `sub_id` and compute RPM |
+| `POST /api/v1/alerts`, `GET /api/v1/alerts`, `DELETE /api/v1/alerts/{id}`, `POST /api/v1/alerts/check` | Manage and evaluate target-price alerts |
+| `GET /api/v1/serpapi/flights` & `/serpapi/hotels` | SerpApi snapshot marts |
 
-Trigger the flow manually from the Prefect UI or terminal:
+## Prefect Orchestration
 
-```cmd
-docker compose exec ingestion-runner prefect deployment run "smartfare-daily-ingest/smartfare-daily-ingest"
-```
+- **`smartfare-daily-ingest` (02:00 UTC daily):** `maintain-raw-partitions` → `ingest-daily-fx-rates` → `collect-flight-prices` → `collect-hotel-prices` → `dbt run` → `dbt test` → `check-price-drop-alerts`, with Slack/Telegram failure alerts.
+- **`smartfare-weekly-train` (04:00 UTC Sunday):** Trains warehouse & prototype ML bundles, writes `scorecard.json`, and calls `POST /api/v1/models/reload`.
 
-Run individual ingestion utilities directly when needed:
+## Testing & CI
 
-```cmd
-docker compose exec ingestion-runner python -m ingestion.partitions
-docker compose exec ingestion-runner python -m ingestion.fx_rates
-docker compose exec ingestion-runner python -m ingestion.collector
-docker compose exec ingestion-runner python -m ingestion.hotel_collector
-```
-
-The committed SerpApi CSV snapshots are a separate, one-time import; the daily flow does not re-import static snapshots.
-
-## ETL and data warehouse
-
-The warehouse follows a Bronze → Silver → Gold layout:
-
-1. **Bronze:** `raw.api_responses` (monthly range-partitioned) keeps raw payloads, request parameters, status codes, SHA-256 hashes, and ingestion timestamps; `public.ingestion_request_log` tracks latency and outcomes; `public.fx_rates` stores daily exchange rates.
-2. **Silver:** `analytics_staging` (`stg_flight_responses`, `stg_hotel_price_observations`) parses JSON into typed columns; `analytics_intermediate` (`int_deduplicated_flights`, `int_flight_price_quality`) deduplicates flight offers and flags quality anomalies.
-3. **Gold:** `analytics_marts` contains `dim_date`, `dim_route`, `dim_hotel`, `fct_flight_price_observations`, `fct_hotel_price_observations`, `quarantined_observations`, and `ml_features_flight_pricing`.
-
-Fact table grains and dimension keys are documented in [WAREHOUSE_DESIGN.md](WAREHOUSE_DESIGN.md).
-
-After starting the services, load the committed SerpApi snapshots into Bronze and build/test the warehouse:
+Run the automated test suite and linter inside Docker or locally:
 
 ```cmd
-docker compose exec ingestion-runner python -m ingestion.import_serpapi_snapshots /app/data/cai_international_flights.csv /app/data/destination_hotels.csv
-docker compose exec api dbt run --project-dir /app/transform --profiles-dir /app/transform
-docker compose exec api dbt test --project-dir /app/transform --profiles-dir /app/transform
+docker compose exec api pip install pytest pytest-asyncio ruff
+docker compose exec api ruff check api dashboard ingestion ml tests
+docker compose exec api pytest -v
 ```
 
-The snapshot importer skips exact duplicate payloads when rerun. Verify raw counts, partitions, FX rates, and Gold keys:
+GitHub Actions (`.github/workflows/ci.yml`) runs `ruff check`, `pytest -v`, and `dbt parse` automatically on every push and pull request.
 
-```cmd
-docker compose exec postgres psql -U smartfare -d smartfare -c "SELECT endpoint, count(*) FROM raw.api_responses WHERE provider='serpapi_snapshot' GROUP BY endpoint;"
-docker compose exec postgres psql -U smartfare -d smartfare -c "SELECT inhrelid::regclass AS partition_name FROM pg_inherits WHERE inhparent = 'raw.api_responses'::regclass ORDER BY 1;"
-docker compose exec postgres psql -U smartfare -d smartfare -c "SELECT rate_date, base_currency, quote_currency, rate FROM public.fx_rates WHERE quote_currency IN ('EGP','EUR','GBP','AED','SAR') ORDER BY quote_currency;"
-docker compose exec postgres psql -U smartfare -d smartfare -c "SELECT count(*) AS fact_rows, count(*) FILTER (WHERE route_key IS NULL) AS missing_route_key, count(*) FILTER (WHERE observed_date_key IS NULL) AS missing_observed_date_key, count(*) FILTER (WHERE departure_date_key IS NULL) AS missing_departure_date_key FROM analytics_marts.fct_flight_price_observations;"
-docker compose exec postgres psql -U smartfare -d smartfare -c "SELECT count(*) AS fact_rows, count(*) FILTER (WHERE hotel_key IS NULL) AS missing_hotel_key, count(*) FILTER (WHERE observed_date_key IS NULL) AS missing_observed_date_key, count(*) FILTER (WHERE checkin_date_key IS NULL) AS missing_checkin_date_key FROM analytics_marts.fct_hotel_price_observations;"
-```
+## Data Provenance & Safety
 
-## API endpoints
+- Mock and 3-year synthetic datasets (`data/historical_flights_3yrs.csv`, `data/historical_hotels_3yrs.csv`, `data/synthetic_*`) are strictly for engineering, backtesting, and demonstration—never present them as live market forecasts.
+- Live warehouse ML promotion remains gated until real daily provider history passes walk-forward out-of-sample thresholds.
+- Never commit `.env`, API tokens, webhook URLs, binary `.joblib` artifacts, or large generated CSVs.
 
-All endpoints are documented interactively at <http://localhost:8000/docs>:
-
-- `GET /health` — service health check.
-- `GET /api/v1/routes` — list routes with price observations.
-- `GET /api/v1/routes/{route_id}/departures` — list departure/return date options for a route.
-- `GET /api/v1/routes/{route_id}/price-history` — observed minimum and median fare history.
-- `GET /api/v1/routes/{route_id}/recommendation` — Phase 1 baseline **BOOK_NOW / WAIT / NEUTRAL** signal with route quantiles and confidence.
-- `GET /api/v1/routes/{route_id}/cheapest-windows` — lowest-cost travel windows combining flights and matched hotels.
-- `GET /api/v1/serpapi/flights` — SerpApi flight snapshot mart results.
-- `GET /api/v1/serpapi/hotels` — SerpApi hotel snapshot mart results.
-
-## Run transformations & quality tests
-
-```cmd
-docker compose exec api dbt run --project-dir /app/transform --profiles-dir /app/transform
-docker compose exec api dbt test --project-dir /app/transform --profiles-dir /app/transform
-```
-
-## Hotel CSV import
-
-Place a permitted hotel-price CSV under `data/` and run the importer with its container path:
-
-```cmd
-docker compose run --rm ingestion-runner python -m ingestion.import_hotels /app/data/hotel_prices.csv
-```
-
-The CSV must follow the importer schema documented in `data/hotel_prices_template.csv`.
-
-## Credentials and generated files
-
-Keep `.env` local. Never commit API tokens, passwords, webhooks, private datasets, or generated outputs. `.env.example` contains placeholders only. dbt build outputs and logs are excluded from Git.
+See [WAREHOUSE_DESIGN.md](WAREHOUSE_DESIGN.md) and [INSTRUCTOR_DEMO.md](INSTRUCTOR_DEMO.md) for schema details and the live demonstration script.

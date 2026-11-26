@@ -42,11 +42,14 @@ services:
       context: .
     volumes:
       - ./api:/app/api
+      - ./dashboard:/app/dashboard
       - ./ingestion:/app/ingestion
       - ./ml:/app/ml
+      - ./tests:/app/tests
       - ./transform:/app/transform
       - ./data:/app/data:ro
       - ./artifacts:/app/artifacts
+      - ./pyproject.toml:/app/pyproject.toml
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-smartfare}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smartfare}

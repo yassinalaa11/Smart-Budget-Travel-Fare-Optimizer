@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smartfare"
-version = "0.3.0"
+version = "1.0.0"
 description = "Travel price intelligence and recommendation platform"
 requires-python = ">=3.12"
 dependencies = [
@@ -24,9 +24,24 @@ dependencies = [
   "uvicorn[standard]>=0.32,<1",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.24,<1",
+  "ruff>=0.8,<1",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["api", "dashboard", "ingestion", "ml"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
